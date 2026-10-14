@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Метроном онлайн — скачать WAV с нужным BPM</title>
+<meta name="description" content="Бесплатный онлайн-метроном: задай темп (BPM), размер, звук и длительность и скачай готовый WAV-файл. Работает прямо в браузере, без регистрации.">
+<link rel="canonical" href="https://szadev.github.io/metronome/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Метроном онлайн — скачать WAV с нужным BPM">
+<meta property="og:description" content="Задай BPM, размер и длительность и скачай метроном в WAV. Бесплатно, в браузере.">
+<meta property="og:url" content="https://szadev.github.io/metronome/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%B5%3C/text%3E%3C/svg%3E">
+<style>
+  :root { --bg:#f6f6f4; --card:#fff; --fg:#1d1d1f; --mut:#6b6b70; --line:#dcdcd8; --acc:#d9480f; color-scheme:light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#151517; --card:#1f1f22; --fg:#ececef; --mut:#9a9aa2; --line:#333338; --acc:#ff7a3d; color-scheme:dark; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; padding:24px 16px; }
+  main { max-width:440px; margin:0 auto; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:22px; }
+  h1 { margin:0 0 4px; font-size:20px; }
+  .sub { margin:0 0 18px; color:var(--mut); font-size:13px; }
+  .bpm { display:flex; align-items:baseline; gap:10px; }
+  .bpm input { font-size:44px; font-weight:700; width:170px; border:none; background:none; color:var(--fg); padding:0; font-variant-numeric:tabular-nums; }
+  .bpm span { color:var(--mut); }
+  input[type=range] { width:100%; accent-color:var(--acc); margin:6px 0 18px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px; align-items:center; }
+  .row label { color:var(--mut); font-size:13px; display:flex; flex-direction:column; gap:4px; }
+  select, .row input[type=number] { font:inherit; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
+  .row input[type=number] { width:80px; }
+  .chk { display:flex; gap:8px; align-items:center; margin-bottom:8px; color:var(--fg); }
+  .btns { display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }
+  button { font:inherit; font-weight:600; border-radius:10px; padding:10px 16px; cursor:pointer; border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+  button.main { background:var(--acc); border-color:var(--acc); color:#fff; flex:1; }
+  #info { color:var(--mut); font-size:13px; margin:14px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Метроном → WAV</h1>
+  <p class="sub">Задай темп, размер и длительность и скачай метроном файлом. Всё считается в браузере.</p>
+
+  <div class="bpm"><input id="bpm" type="number" min="20" max="400" step="0.1" value="120"><span>BPM</span></div>
+  <input id="bpmRange" type="range" min="20" max="300" step="1" value="120">
+
+  <div class="row">
+    <label>Долей в такте
+      <select id="beats">
+        <option>1</option><option>2</option><option>3</option><option selected>4</option><option>5</option>
+        <option>6</option><option>7</option><option>8</option><option>9</option><option>12</option>
+      </select>
+    </label>
+    <label>Звук
+      <select id="sound">
+        <option value="click">Клик</option>
+        <option value="beep">Бип</option>
+        <option value="wood">Дерево</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="row">
+    <label>Минуты <input id="min" type="number" min="0" step="1" value="1"></label>
+    <label>Секунды <input id="sec" type="number" min="0" max="59" step="1" value="0"></label>
+  </div>
+
+  <label class="chk"><input id="accent" type="checkbox" checked> Акцент на первую долю</label>
+  <label class="chk"><input id="bars" type="checkbox"> Округлить до целых тактов (для зацикливания)</label>
+
+  <div class="btns">
+    <button id="play">▶ Прослушать</button>
+    <button id="tap">Тап</button>
+    <button id="dl" class="main">⬇ Скачать WAV</button>
+  </div>
+  <p id="info"></p>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const SR = 44100;
+
+function params() {
+  const bpm = Math.min(400, Math.max(20, parseFloat($('bpm').value) || 120));
+  const beats = +$('beats').value;
+  const spb = 60 / bpm;
+  let dur = (parseFloat($('min').value) || 0) * 60 + (parseFloat($('sec').value) || 0);
+  if (dur <= 0) dur = spb * beats;
+  if ($('bars').checked) {
+    const bar = spb * beats;
+    dur = Math.max(1, Math.ceil(dur / bar - 1e-9)) * bar;
+  }
+  return { bpm, beats, spb, dur, sound: $('sound').value, accent: $('accent').checked };
+}
+
+function hit(type, acc) {
+  const len = Math.round(SR * 0.08), a = new Float32Array(len);
+  for (let i = 0; i < len; i++) {
+    const t = i / SR;
+    let v;
+    if (type === 'click') {
+      const f = acc ? 2000 : 1300;
+      v = Math.sin(2 * Math.PI * f * t) * Math.exp(-t / 0.006);
+    } else if (type === 'beep') {
+      const f = acc ? 1760 : 880;
+      const env = t < 0.002 ? t / 0.002 : t < 0.05 ? 1 : Math.max(0, 1 - (t - 0.05) / 0.01);
+      v = Math.sin(2 * Math.PI * f * t) * env;
+    } else {
+      const f = acc ? 1100 : 800;
+      v = (Math.sin(2 * Math.PI * f * t) + 0.5 * Math.sin(2 * Math.PI * f * 2.7 * t)
+        + 0.3 * (Math.random() * 2 - 1) * Math.exp(-t / 0.002)) * Math.exp(-t / 0.02) * 0.6;
+    }
+    a[i] = v * (acc ? 0.9 : 0.6);
+  }
+  return a;
+}
+
+function render(p, dur) {
+  const n = Math.round(dur * SR), out = new Float32Array(n);
+  const hA = hit(p.sound, p.accent), hN = hit(p.sound, false);
+  for (let i = 0; ; i++) {
+    const pos = Math.round(i * p.spb * SR);
+    if (pos >= n) break;
+    const h = i % p.beats === 0 ? hA : hN;
+    for (let j = 0; j < h.length && pos + j < n; j++) out[pos + j] += h[j];
+  }
+  return out;
+}
+
+function wav(f) {
+  const buf = new ArrayBuffer(44 + f.length * 2), v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + f.length * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, SR, true); v.setUint32(28, SR * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, f.length * 2, true);
+  const pcm = new Int16Array(buf, 44, f.length);
+  for (let i = 0; i < f.length; i++) {
+    const s = Math.max(-1, Math.min(1, f[i]));
+    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+function fmtDur(s) {
+  const m = Math.floor(s / 60), r = s - m * 60;
+  return m + ':' + r.toFixed(r % 1 ? 2 : 0).padStart(r % 1 ? 5 : 2, '0');
+}
+
+function updateInfo() {
+  const p = params();
+  const hits = Math.ceil(p.dur / p.spb - 1e-9);
+  const mb = (p.dur * SR * 2 / 1048576).toFixed(1);
+  $('info').textContent = `Длительность ${fmtDur(p.dur)} · ударов ${hits} · ≈ ${mb} МБ (WAV 44.1 кГц, моно)`;
+}
+
+// Preview: loop one bar
+let ctx = null, src = null;
+function stopPreview() {
+  if (src) { src.stop(); src.disconnect(); src = null; }
+  $('play').textContent = '▶ Прослушать';
+}
+function startPreview() {
+  stopPreview();
+  const p = params();
+  ctx = ctx || new AudioContext({ sampleRate: SR });
+  ctx.resume();
+  const data = render(p, p.spb * p.beats);
+  const b = ctx.createBuffer(1, data.length, SR);
+  b.copyToChannel(data, 0);
+  src = ctx.createBufferSource();
+  src.buffer = b; src.loop = true;
+  src.connect(ctx.destination);
+  src.start();
+  $('play').textContent = '■ Стоп';
+}
+$('play').onclick = () => src ? stopPreview() : startPreview();
+
+function onChange() {
+  updateInfo();
+  if (src) startPreview();
+}
+$('bpm').oninput = () => { $('bpmRange').value = $('bpm').value; onChange(); };
+$('bpmRange').oninput = () => { $('bpm').value = $('bpmRange').value; onChange(); };
+for (const id of ['beats', 'sound', 'accent', 'bars', 'min', 'sec']) $(id).addEventListener('input', onChange);
+
+// Tap tempo
+let taps = [];
+$('tap').onclick = () => {
+  const now = performance.now();
+  taps = taps.filter(t => now - t < 3000);
+  taps.push(now);
+  if (taps.length >= 2) {
+    const avg = (taps[taps.length - 1] - taps[0]) / (taps.length - 1);
+    const bpm = Math.round(60000 / avg * 10) / 10;
+    $('bpm').value = bpm; $('bpmRange').value = bpm; onChange();
+  }
+};
+
+$('dl').onclick = () => {
+  const p = params();
+  $('dl').disabled = true; $('dl').textContent = 'Генерирую…';
+  setTimeout(() => {
+    try {
+      const blob = wav(render(p, p.dur));
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `metronome_${p.bpm}bpm_${p.beats}beats_${fmtDur(p.dur).replace(':', 'm').replace('.', '_')}s.wav`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    } finally {
+      $('dl').disabled = false; $('dl').textContent = '⬇ Скачать WAV';
+    }
+  }, 20);
+};
+
+updateInfo();
+</script>
+</body>
+</html>
